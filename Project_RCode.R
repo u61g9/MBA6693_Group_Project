@@ -491,3 +491,4 @@ class_pred <- predict(class_model, newdata = data_test, type = "class")
 View(class_pred)
 str(data_test$Performance.Tag)
 confusionMatrix(data = class_pred, reference = data_test$Performance.Tag)
+#add a comment
