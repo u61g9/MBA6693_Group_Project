@@ -456,5 +456,38 @@ ggplot(melted_cor_DPD_12, aes(x=Var1, y=Var2, fill=value)) +
 # For 12 Months 30DPD and 60DPD average relationship.
 # For 12 Months 30DPD and 60DPD has significant negative relationship and more towards 0.80 value Dark Blue
 
+#===========================================#
+#  Tree-based Analysis                      #
+#===========================================#
 
+# We will examine four different tree based methods to determine which best suits
+# the credit_data.  This will start with a traditional classification tree model, a
+# bagged tree model, a random forest model and a gradient-boosting machine (GBM).
 
+# We need to create a training and test set for the analysis.  This will be 
+# consistent across all subsequent analyses.  First, we will filter our data to
+# only include the Performance.Tag column and those we want to use in our tree.
+
+filter_data <- merged_data
+filter_data$Application.ID <- NULL
+filter_data$age_bin <-NULL
+
+set.seed(42)
+gp <- runif(nrow(filter_data))
+data_train <- filter_data[gp < 0.8, ]
+data_test <- filter_data[gp >= 0.8, ]
+(nrow(data_train))
+(nrow(data_test))
+(nrow(merged_data))
+
+# Classification Tree
+#------------------------
+
+library(rpart)
+library(caret)
+
+class_model <- rpart(Performance.Tag ~ ., data_train, method = "class")
+class_pred <- predict(class_model, newdata = data_test, type = "class")
+View(class_pred)
+str(data_test$Performance.Tag)
+confusionMatrix(data = class_pred, reference = data_test$Performance.Tag)
