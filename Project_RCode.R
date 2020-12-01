@@ -471,6 +471,8 @@ ggplot(melted_cor_DPD_12, aes(x=Var1, y=Var2, fill=value)) +
 filter_data <- merged_data
 filter_data$Application.ID <- NULL
 filter_data$age_bin <-NULL
+filter_data[,'Performance.Tag']<-factor(filter_data[,'Performance.Tag'])
+
 
 set.seed(42)
 gp <- runif(nrow(filter_data))
@@ -487,9 +489,63 @@ library(rpart)
 library(caret)
 
 class_model <- rpart(Performance.Tag ~ ., data_train, method = "class")
+class_pred_train <- predict(class_model, newdata = data_train, type = "class")
 class_pred <- predict(class_model, newdata = data_test, type = "class")
-View(class_pred)
-str(data_test$Performance.Tag)
-confusionMatrix(data = class_pred, reference = data_test$Performance.Tag)
-#add a comment
-#add a comment
+
+(mean(class_pred_train == data_train$Performance.Tag))
+(mean(class_pred == data_test$Performance.Tag))
+# The classification tree is 95.7% accurate, which seems good, but the model is 
+# predicting zero in all insances.  We may need to allow for smaller min splits 
+# due to the rarity of defaults.  
+minsplit = 5
+maxdepth = 30
+cp = 0.0001
+class_model <- rpart(formula = Performance.Tag~.,
+      data = data_train,
+      method = "class",
+      minsplit = minsplit,
+      maxdepth = maxdepth,
+      cp = cp)
+class_pred_train <- predict(class_model, newdata = data_train, type = "class")
+class_pred <- predict(class_model, newdata = data_test, type = "class")
+(mean(class_pred_train == data_train$Performance.Tag))
+(mean(class_pred == data_test$Performance.Tag))
+plot(class_model)
+# The training accuracy has improved to 98%, but the test error is only 92.5%.
+#   This is symptom of overfitting.  We can tune the hyper parameters.
+
+splits = c(1,3,5,10,20)
+depths = c(5,10,15,20,25)
+cps = c(0.0001,0.001,0.01)
+
+hyper_grid <- expand.grid(splits = splits,depths = depths,cps = cps)
+accuracy = c()
+
+# Note: this for loop takes 10 minutes to run, so I have commented it out for 
+# ease with double ##'s.
+
+## for(i in 1:nrow(hyper_grid)) {
+##   class_model <- rpart(formula = Performance.Tag~.,
+##                        data = data_train,
+##                        method = "class",
+##                        minsplit = hyper_grid$splits[i],
+##                        maxdepth = hyper_grid$depths[i],
+##                        cp = hyper_grid$cps[i])
+##   class_pred$pred <- predict(class_model, newdata = data_test, type = "class")
+##   class_pred$actual <- data_test$Performance.Tag
+##   accuracy[i] = mean(class_pred$pred == data_test$Performance.Tag)
+##   }
+ accuracy
+ 
+# Not a single tree results in higher degree of accuracy than simply guessing 
+# that no one will default (accuracy = 95.777773%).  We should maybe # try a 
+ # different appraoch
+
+
+# Bagged Tree
+#------------------------
+
+# We will try abagged tree to see if that gives a better result.
+ 
+library(ipred)
+
