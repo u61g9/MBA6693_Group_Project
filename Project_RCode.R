@@ -473,6 +473,13 @@ filter_data$Application.ID <- NULL
 filter_data$age_bin <-NULL
 filter_data[,'Performance.Tag']<-factor(filter_data[,'Performance.Tag'])
 
+# Check for NA's in data (this will matter with some of the models)
+library(bnpa)
+(nrow(filter_data))
+check.na(filter_data)
+filter_data <- na.omit(filter_data)
+(nrow(filter_data))
+check.na(filter_data)
 
 set.seed(42)
 gp <- runif(nrow(filter_data))
@@ -489,11 +496,13 @@ library(rpart)
 library(caret)
 
 class_model <- rpart(Performance.Tag ~ ., data_train, method = "class")
-class_pred_train <- predict(class_model, newdata = data_train, type = "class")
-class_pred <- predict(class_model, newdata = data_test, type = "class")
+class_pred_train <- predict(object = class_model, newdata = data_train, type = "class")
+class_pred <- predict(object = class_model, newdata = data_test, type = "class")
 
 (mean(class_pred_train == data_train$Performance.Tag))
 (mean(class_pred == data_test$Performance.Tag))
+cM <- confusionMatrix(data = class_pred,reference = data_test$Performance.Tag)
+cM
 # The classification tree is 95.7% accurate, which seems good, but the model is 
 # predicting zero in all insances.  We may need to allow for smaller min splits 
 # due to the rarity of defaults.  
@@ -506,10 +515,12 @@ class_model <- rpart(formula = Performance.Tag~.,
       minsplit = minsplit,
       maxdepth = maxdepth,
       cp = cp)
-class_pred_train <- predict(class_model, newdata = data_train, type = "class")
-class_pred <- predict(class_model, newdata = data_test, type = "class")
+class_pred_train <- predict(object = class_model, newdata = data_train, type = "class")
+class_pred <- predict(object = class_model, newdata = data_test, type = "class")
 (mean(class_pred_train == data_train$Performance.Tag))
 (mean(class_pred == data_test$Performance.Tag))
+cM <- confusionMatrix(data = class_pred,reference = data_test$Performance.Tag)
+cM
 plot(class_model)
 # The training accuracy has improved to 98%, but the test error is only 92.5%.
 #   This is symptom of overfitting.  We can tune the hyper parameters.
@@ -523,19 +534,19 @@ accuracy = c()
 
 # Note: this for loop takes 10 minutes to run, so I have commented it out for 
 # ease with double ##'s.
+nrow(hyper_grid)
+## for(i in 1:(nrow(hyper_grid))) {
+##    class_model <- rpart(formula = Performance.Tag~.,
+## data = data_train,
+## method = "class",
+##                         minsplit = hyper_grid$splits[i],
+## maxdepth = hyper_grid$depths[i],
+##                         cp = hyper_grid$cps[i])
+##    class_pred <- predict(object = class_model, newdata = data_test, type = "class")
+##    accuracy[i] = mean(class_pred == data_test$Performance.Tag)
+##  }
 
-## for(i in 1:nrow(hyper_grid)) {
-##   class_model <- rpart(formula = Performance.Tag~.,
-##                        data = data_train,
-##                        method = "class",
-##                        minsplit = hyper_grid$splits[i],
-##                        maxdepth = hyper_grid$depths[i],
-##                        cp = hyper_grid$cps[i])
-##   class_pred$pred <- predict(class_model, newdata = data_test, type = "class")
-##   class_pred$actual <- data_test$Performance.Tag
-##   accuracy[i] = mean(class_pred$pred == data_test$Performance.Tag)
-##   }
- accuracy
+accuracy
  
 # Not a single tree results in higher degree of accuracy than simply guessing 
 # that no one will default (accuracy = 95.777773%).  We should maybe # try a 
@@ -548,4 +559,29 @@ accuracy = c()
 # We will try abagged tree to see if that gives a better result.
  
 library(ipred)
+library(e1071)
+bag_model <- bagging(Performance.Tag~.,data = data_train)
+bag_pred <- predict(object = bag_model, newdata = data_test, type = "class")
+print(data_test$Performance.Tag)
+table(data_test$Performance.Tag)
+bag_cM <- confusionMatrix(data = bag_pred, reference = data_test$Performance.Tag)
+bag_cM
 
+# The confusion matrix shows that the model doesn't predict a single defualt 
+# correctly.  Sensitivity is close ot 100%, but Specificity = 0%.
+
+# Random Forest
+#--------------------------
+
+# The random forest method shoudl allow us to produce a more useful tree as
+# it will allow us to increase the weight of credit defaults in the data set
+
+library(randomForest)
+forest_model <- randomForest(Performance.Tag~.,data = data_train)
+print(forest_model)
+
+err <- forest_model$err.rate
+head(err)
+
+# write.csv(err,"err.csv", row.names = FALSE)
+#res <- tuneRF(x = data_train, y = data_test,ntreeTry = 50)
