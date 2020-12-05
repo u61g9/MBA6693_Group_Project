@@ -531,7 +531,7 @@ cps = c(0.0001,0.001,0.01)
 
 hyper_grid <- expand.grid(splits = splits,depths = depths,cps = cps)
 accuracy = c()
-
+hyper_grid
 # Note: this for loop takes 10 minutes to run, so I have commented it out for 
 # ease with double ##'s.
 nrow(hyper_grid)
@@ -583,5 +583,226 @@ print(forest_model)
 err <- forest_model$err.rate
 head(err)
 
-# write.csv(err,"err.csv", row.names = FALSE)
-#res <- tuneRF(x = data_train, y = data_test,ntreeTry = 50)
+# Again, the tree method is predicting only that the person wil not default.
+# I am goign to choose my test data set slightly differently, so that I choose
+# 80% of my 'defaults' but only 5% of my non-defaults.  This should give more
+# consideration for the defaults and hopefully hep build the tree in a better
+# way.  The balance of the data will be my test set.
+
+# First I will Split my data set into defaults and nondefaults.
+
+nondef <- filter_data %>%
+  filter(Performance.Tag =="0")
+def <- filter_data %>%
+  filter(Performance.Tag == "1")
+
+
+set.seed(42)
+gp1 <- runif(nrow(nondef))
+gp2 <- runif(nrow(def))
+nondef05 <- nondef[gp1 < 0.05, ]
+nondef95 <- nondef[gp1 >= 0.05, ]
+def80 <- def[gp2 < 0.8, ]
+def20 <- def[gp2 >= 0.8, ]
+(nrow(nondef05))
+(nrow(nondef95))
+(nrow(nondef))
+(nrow(def20))
+(nrow(def80))
+(nrow(def))
+(nrow(data_test))
+(nrow(merged_data))
+
+# nondef05 has 3300 entries and def80 has 2340.  These will be combined to form
+# the training set
+
+data_train <- rbind(def80,nondef05)
+data_test <- rbind(def20,nondef95)
+
+forest_model <- randomForest(Performance.Tag~.,data = data_train)
+print(forest_model)
+
+err <- forest_model$err.rate
+head(err)
+
+write.csv(err,"err.csv", row.names = FALSE)
+res <- tuneRF(x = subset(data_train, select= -Performance.Tag), y = data_train$Performance.Tag,ntreeTry = 500)
+print(res)
+
+forest_model <- randomForest(Performance.Tag~.,data = data_train, mtry = 3)
+print(forest_model)
+
+# Establish a list of possible values for mtry, nodesize and sampsize
+mtry <- seq(4, ncol(data_train) * 0.8, 2)
+nodesize <- seq(3, 8, 2)
+sampsize <- nrow(data_train) * c(0.7, 0.8)
+
+# Create a data frame containing all combinations 
+hyper_grid <- expand.grid(mtry = mtry, nodesize = nodesize, sampsize = sampsize)
+hyper_grid
+# Create an empty vector to store OOB error values
+oob_err <- c()
+
+# Write a loop over the rows of hyper_grid to train the grid of models
+for (i in 1:nrow(hyper_grid)) {
+  
+  # Train a Random Forest model
+  model <- randomForest(formula = Performance.Tag ~ ., 
+                        data = data_train,
+                        mtry = hyper_grid$mtry[i],
+                        nodesize = hyper_grid$nodesize[i],
+                        sampsize = hyper_grid$sampsize[i])
+  
+  # Store OOB error for the model                      
+  oob_err[i] <- model$err.rate[nrow(model$err.rate), "OOB"]
+}
+
+# Identify optimal set of hyperparmeters based on OOB error
+opt_i <- which.min(oob_err)
+print(hyper_grid[opt_i,])
+
+model <- randomForest(formula = Performance.Tag ~ ., 
+                      data = data_train,
+                      mtry = hyper_grid$mtry[opt_i],
+                      nodesize = hyper_grid$nodesize[opt_i],
+                      sampsize = 3795)
+print(model)
+
+# The best we do with a random forest is an OOB accuracy of 62.8%
+# sensitivity = 2624/(2624 + 1398) = 65.2%
+# specificity = 942/(942 + 715) = 56.8%
+
+# The last step will be to check the accuracy on the test set
+pred <- predict(object = model,
+                newdata = data_test,
+                type = "class")
+head(pred)
+pred <- ifelse(pred > 0.5,"1","0")
+cF <- confusionMatrix(pred,data_test$Performance.Tag)
+cF
+
+# The specificity of the test data is much worse
+# accuracy = 80%
+# sensitivity = 80.8%
+# specificity = 35.5%
+
+#=============================================#
+#  LOGISTIC REGRESSION ANALYSIS               #
+#=============================================#
+
+# The second model we will attempt to use is a logistic regression
+
+# First we will redefine our test set and training set in order to ensure 
+# everything is as we expect.
+
+set.seed(42)
+gp <- runif(nrow(filter_data))
+data_train <- filter_data[gp < 0.8, ]
+data_test <- filter_data[gp >= 0.8, ]
+(nrow(data_train))
+(nrow(data_test))
+(nrow(merged_data))
+
+glm_model <- glm(Performance.Tag ~., data = data_train, family = "binomial")
+summary(glm_model)
+
+# There are a lot of insignificant predictors.
+
+pred <- predict(object = glm_model, newdata = data_test, type = "response")
+pred03 <- if_else(pred>0.03,1,0)
+pred05 <- if_else(pred>0.05,1,0)
+pred10 <- if_else(pred>0.1,1,0)
+pred15 <- if_else(pred>0.15,1,0)
+pred20 <- if_else(pred>0.2,1,0)
+pred30 <- if_else(pred>0.3,1,0)
+pred40 <- if_else(pred>0.4,1,0)
+pred50 <- if_else(pred>0.5,1,0)
+
+table(data_test$Performance.Tag, pred03)
+table(data_test$Performance.Tag, pred05)
+table(data_test$Performance.Tag, pred10)
+table(data_test$Performance.Tag, pred15)
+table(data_test$Performance.Tag, pred20)
+table(data_test$Performance.Tag, pred30)
+table(data_test$Performance.Tag, pred40)
+table(data_test$Performance.Tag, pred50)
+
+# Teh fit at pretty much all ranges is terrible.  Perhaps the data is being
+# overfit.  We have 44 parameters, only nine of which have any level of 
+# significance.  We will cut this down to twenty parameters by eleminating the
+# least significant, based on the p-value.  (All p-values over xx were removed).
+# The parameters to keep are listed below with their p-value
+#Age                                                             0.52639    
+#No.of.dependents2                                               0.10139    
+#No.of.dependents3                                               0.38565    
+#No.of.dependents4                                               0.62380    
+#No.of.dependents5                                               0.89680    
+#Income                                                          0.02289 *  
+#No.of.months.in.current.residence                               0.01830 *  
+#No.of.months.in.current.company                                 0.01102 *  
+#No.of.times.90.DPD.or.worse.in.last.6.months                    0.22974    
+#No.of.times.60.DPD.or.worse.in.last.6.months                    0.13270    
+#No.of.times.30.DPD.or.worse.in.last.6.months                    0.03471 *  
+#No.of.times.90.DPD.or.worse.in.last.12.months                   0.00316 ** 
+#No.of.times.30.DPD.or.worse.in.last.12.months                   0.20019    
+#Avgas.CC.Utilization.in.last.12.months                          < 2e-16 ***
+#No.of.trades.opened.in.last.12.months                           0.36228    
+#No.of.PL.trades.opened.in.last.6.months                         0.12740    
+#No.of.PL.trades.opened.in.last.12.months                        0.00433 ** 
+#No.of.Inquiries.in.last.6.months..excluding.home...auto.loans.  0.06521 .  
+#No.of.Inquiries.in.last.12.months..excluding.home...auto.loans. 1.61e-05 ***
+#Presence.of.open.home.loan1                                     0.21915    
+#Outstanding.Balance                                             0.19399    
+#Total.No.of.Trades                                              0.11014    
+#Presence.of.open.auto.loan1                                     0.50095 
+
+formula <- Performance.Tag ~ Age+No.of.dependents+Income+No.of.months.in.current.residence +
+  No.of.months.in.current.company+No.of.times.90.DPD.or.worse.in.last.6.months+
+  No.of.times.60.DPD.or.worse.in.last.6.months+
+  No.of.times.30.DPD.or.worse.in.last.6.months+ 
+  No.of.times.90.DPD.or.worse.in.last.12.months+
+  No.of.times.30.DPD.or.worse.in.last.12.months+   
+  Avgas.CC.Utilization.in.last.12.months+
+  No.of.trades.opened.in.last.12.months+   
+  No.of.PL.trades.opened.in.last.6.months+  
+  No.of.PL.trades.opened.in.last.12.months+
+  No.of.Inquiries.in.last.6.months..excluding.home...auto.loans.+
+  No.of.Inquiries.in.last.12.months..excluding.home...auto.loans.+
+  Presence.of.open.home.loan+
+  Outstanding.Balance+
+  Total.No.of.Trades+ 
+  Presence.of.open.auto.loan 
+
+formula
+
+glm_model <- glm(formula, data = data_train, family = "binomial")
+summary(glm_model)
+
+pred <- predict(object = glm_model, newdata = data_test, type = "response")
+pred03 <- if_else(pred>0.03,1,0)
+pred05 <- if_else(pred>0.05,1,0)
+pred10 <- if_else(pred>0.1,1,0)
+pred15 <- if_else(pred>0.15,1,0)
+pred20 <- if_else(pred>0.2,1,0)
+pred30 <- if_else(pred>0.3,1,0)
+pred40 <- if_else(pred>0.4,1,0)
+pred50 <- if_else(pred>0.5,1,0)
+
+table(data_test$Performance.Tag, pred03)
+table(data_test$Performance.Tag, pred05)
+table(data_test$Performance.Tag, pred10)
+table(data_test$Performance.Tag, pred15)
+table(data_test$Performance.Tag, pred20)
+table(data_test$Performance.Tag, pred30)
+table(data_test$Performance.Tag, pred40)
+table(data_test$Performance.Tag, pred50)
+
+# The model with the best sensitivity has a threshold of 0.1.  The sensitivity 
+# is still only 10%.  
+
+
+
+#=============================================#
+# Support Vector Machines                     #
+#=============================================#
+#
