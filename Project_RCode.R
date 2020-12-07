@@ -1069,7 +1069,7 @@ svm_model
 pred_test <- predict(svm_model, testset)
 mean(pred_test == testset$y)
 # 0.9210526
-
+table(pred_test,testset$y)
 plot(svm_model, trainset)
 
 #Average accuracy for default cost SVM
