@@ -893,12 +893,79 @@ svm_model<- svm(formula,
                 kernel = "linear",
                 scale = FALSE)
 
+<<<<<<< HEAD
 pred_test <- predict(svm_model, data_test)
 mean(pred_test == data_test$Performance.Tag)
 table(pred_test,data_test$Performance.Tag)
 confusionMatrix(pred_test,data_test$Performance.Tag)
 # Accuracy and Sensitivity are good, but The sensitivity is very 
 # low (168/(168+391) = 30%
+=======
+# lying on a circle of radius r
+circle <-
+  function(x1_center, x2_center, r, npoint = 100) {
+    # Angular spacing of 2*pi/npoint between points
+    theta <- seq(0, 2 * pi, length.out = npoint)
+    x1_circ <- x1_center + r * cos(theta)
+    x2_circ <- x2_center + r * sin(theta)
+    data.frame(x1c = x1_circ, x2c = x2_circ)
+  }
+# Generate boundary
+boundary <- circle(x1_center = 0,
+                   x2_center = 0,
+                   r = radius)
+# Add boundary to previous plot
+p <- p +
+  geom_path(data = boundary,
+            aes(x = x1c, y = x2c),
+            inherit.aes = FALSE)
+# Display plot
+p
+
+#Linear SVM, cost = 1
+#Partition radially separable dataset into training/test (seed = 10)
+# Build default cost linear SVM on training set
+svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear")
+svm_model
+
+# Calculate accuracy on test set
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+# 0.9210526
+
+plot(svm_model, trainset)
+
+#Linear SVM, cost = 100
+
+svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear")
+svm_model
+#31
+
+# Accuracy
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+# 0.9210526
+table(pred_test,testset$y)
+plot(svm_model, trainset)
+
+#Average accuracy for default cost SVM
+accuracy <- rep(NA, 100)
+set.seed(10)
+for (i in 1:100) {
+  df[, "train"] <- ifelse(runif(nrow(df)) < 0.8, 1, 0)
+  trainset <- df[df$train == 1, ]
+  testset <- df[df$train == 0, ]
+  trainColNum <- grep("train", names(trainset))
+  trainset <- trainset[, -trainColNum]
+  testset <- testset[, -trainColNum]
+  svm_model<- svm(y ~ ., data = trainset, type = "C-classification", cost = 1, kernel = "linear")
+  pred_test <- predict(svm_model, testset)
+  accuracy[i] <- mean(pred_test == testset$y)}
+mean(accuracy)
+# 0.642843
+sd(accuracy)
+# 0.07606017
+>>>>>>> 9c3c1826756deceaa514851211f67ccee975de39
 
 # Columns: 1 ~ 6 + 10 + 11 + 14 + 15 + 18 + 22 + 23 + 24
 #============================================#
