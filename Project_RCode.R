@@ -641,7 +641,7 @@ forest_model <- randomForest(Performance.Tag~.,data = data_train, mtry = 3)
 print(forest_model)
 
 # Establish a list of possible values for mtry, nodesize and sampsize
-mtry <- seq(4, ncol(data_train) * 0.8, 2)
+mtry <- seq(4, ncol(data_train) * 0.5, 2)
 nodesize <- seq(3, 8, 2)
 sampsize <- nrow(data_train) * c(0.7, 0.8)
 
@@ -677,22 +677,29 @@ model <- randomForest(formula = Performance.Tag ~ .,
 print(model)
 
 # The best we do with a random forest is an OOB accuracy of 62.8%
-# sensitivity = 2624/(2624 + 1398) = 65.2%
-# specificity = 942/(942 + 715) = 56.8%
+# sensitivity = 2608/(2608 + 1397) = 65.1%
+# specificity = 943/(943 + 741) = 56.0%
 
 # The last step will be to check the accuracy on the test set
 pred <- predict(object = model,
                 newdata = data_test,
-                type = "class")
+                type = "prob")
 head(pred)
-pred <- ifelse(pred > 0.5,"1","0")
-cF <- confusionMatrix(pred,data_test$Performance.Tag)
+
+pred1 <- ifelse(pred[,1] >= 0.58,1,0)
+cF <- confusionMatrix(as.factor(pred1),data_test$Performance.Tag)
 cF
+# install.packages("pROC")
+library("pROC")
+ROC <- roc(data_test$Performance.Tag, pred1)
+plot(ROC, col = "blue")
+auc(ROC) 
+
 
 # The specificity of the test data is much worse
-# accuracy = 80%
-# sensitivity = 80.8%
-# specificity = 35.5%
+# accuracy = 38.3%
+# sensitivity = 38.3%
+# specificity = 39.5%
 
 #=============================================#
 #  LOGISTIC REGRESSION ANALYSIS               #
@@ -726,15 +733,27 @@ pred30 <- if_else(pred>0.3,1,0)
 pred40 <- if_else(pred>0.4,1,0)
 pred50 <- if_else(pred>0.5,1,0)
 
-table(data_test$Performance.Tag, pred03)
-table(data_test$Performance.Tag, pred05)
-table(data_test$Performance.Tag, pred10)
-table(data_test$Performance.Tag, pred15)
-table(data_test$Performance.Tag, pred20)
-table(data_test$Performance.Tag, pred30)
-table(data_test$Performance.Tag, pred40)
-table(data_test$Performance.Tag, pred50)
+t3 <- table(data_test$Performance.Tag, pred03)
+t5 <- table(data_test$Performance.Tag, pred05)
+t10 <- table(data_test$Performance.Tag, pred10)
+t15 <- table(data_test$Performance.Tag, pred15)
+t20 <- table(data_test$Performance.Tag, pred20)
+t30 <- table(data_test$Performance.Tag, pred30)
+t40 <- table(data_test$Performance.Tag, pred40)
+t50 <- table(data_test$Performance.Tag, pred50)
+t50
+df <- data.frame(x = c(3,5,10,15,20,30,40,50), 
+                 tp = c(t3[1,1],t5[1,1],t10[1,1],t15[1,1],t20[1,1],t30[1,1],t40[1,1],t50[1,1]),
+                 fn = c(t3[1,2],t5[1,2],t10[1,2],t15[1,2],t20[1,2],t30[1,2],0,0),
+                 fp = c(t3[2,1],t5[2,1],t10[2,1],t15[2,1],t20[2,1],t30[2,1],t40[2,1],t50[2,1]),
+                 tn = c(t3[2,2],t5[2,2],t10[2,2],t15[2,2],t20[2,2],t30[2,2],0,0))
+df
+df$acc <- (df[,2]+df[,5])/(df[,2]+df[,3]+df[,4]+df[,5])
+df$sens <- (df[,2])/(df[,2]+df[,4])
+df$spec <- (df[,5])/(df[,3]+df[,5])
 
+df
+p <- ggplot(df,aes(x = x, y = acc))
 # Teh fit at pretty much all ranges is terrible.  Perhaps the data is being
 # overfit.  We have 44 parameters, only nine of which have any level of 
 # significance.  We will cut this down to twenty parameters by eleminating the
@@ -805,7 +824,7 @@ table(data_test$Performance.Tag, pred30)
 table(data_test$Performance.Tag, pred40)
 table(data_test$Performance.Tag, pred50)
 
-# The model with the best sensitivity has a threshold of 0.1.  The sensitivity 
+# The model with the best specificity has a threshold of 0.1.  The specificity 
 # is still only 10%.  
 
 
@@ -814,430 +833,137 @@ table(data_test$Performance.Tag, pred50)
 # Support Vector Machines                     #
 #=============================================#
 
-#==========================#
-#  For Performance.Tag     #
-#==========================#
+# Use data sets set up in logistic regression section above:
+# 'data_train' and 'data_test'
+# Note that this hit a "reached max iterations" when I attempted to
+# run 'Performance.Tag ~ .'
 
-# Specify dataframe, set plot aesthetics in geom_point (note y = 0)
-p <- ggplot(merged_data) +
-  geom_point(aes(Performance.Tag, 0))
+# We have to cut the dataset down, so we will assume that the formula used
+# in the logistic regression section
+# The reduced formula also couldn't solve.  I am goign to try using the 
+# test set rather than the training set as it is 1/4 the size.
+# The model would still not solve, so I am goign to use my much smaller 
+# data set with 5% of the non defaults and 80% of the defaults.
 
-# Label each point with Performance.Tag value, adjust text size and location
-p <- p +
-  geom_text(aes(Performance.Tag, 0, label = Performance.Tag ),
-            size = 2.5,
-            vjust = 2,
-            hjust = 0.5)
-# Display plot
-p
-
-#Performance Tag has only two Outcomes 0 and 1
-
-#=========================================#
-# No.of.trades.opened.in.last.6.months    #
-#=========================================#
-# Specify dataframe, set plot aesthetics in geom_point (note y = 0)
-n <- ggplot(merged_data) +
-  geom_point(aes(No.of.trades.opened.in.last.6.months, 0))
-
-# Label each point with No.of.trades.opened.in.last.6.months, adjust text size and location
-n <- n +
-  geom_text(aes(No.of.trades.opened.in.last.6.months, 0, label = No.of.trades.opened.in.last.6.months ),
-            size = 2.5,
-            vjust = 2,
-            hjust = 0.5)
-# Display plot
-n
-# Define data frame containing decision boundaries
-d_bounds <- data.frame(sep = c(6,7))
-n <- n +
-  geom_point(data = d_bounds,
-             aes(sep, 0),
-             color = "red",
-             size = 3) +
-  geom_text(data = d_bounds,
-            aes(sep, 0, label = sep),
-            size = 2.5,
-            vjust = 2,
-            hjust = 0.5,
-            color = "red")
-# Display plot
-n
-# Create data frame with maximal margin separator
-mm_sep <- data.frame(sep = c((6 + 7) / 2))
-# Add mm boundary to previous plot
-n <- n +
-  geom_point(data = mm_sep,
-             aes(sep, 0),
-             color = "blue",
-             size = 4)
-# Display plot
-n
-
-#=========================================#
-#               Preliminaries             #
-#=========================================#
-# Set required number of data points
-np <- 200
-# Set seed to ensure reproducibility
-set.seed(42)
-# Generate dataframe with two predictors x1 and x2 in (0,1)
-df <- data.frame(x1 = runif(np),
-                 x2 = runif(np))
-# Classify points as -1 or +1
-df$y <- factor(ifelse(df$x1 - df$x2 > 0, -1, 1),
-               levels = c(-1, 1))
-# Build plot
-p <- ggplot(data = df, aes(x = x1, y = x2, color = y)) +
-  geom_point() +
-  scale_color_manual(values = c("-1" = "red", "1" = "blue")) +
-  geom_abline(slope = 1, intercept = 0)
-# Display it
-p
-
-# Create a margin of 0.05 in dataset
-delta <- 0.05
-# Retain only those points that lie outside the margin
-df1 <- df[abs(df$x1 - df$x2) > delta, ]
-# Check number of data points remaining
-nrow(df1)
-# Replot dataset with margin (code is exactly same as before)
-p <- ggplot(data = df1, aes(x = x1, y = x2, color = y)) +
-  geom_point() +
-  scale_color_manual(values = c("red", "blue")) +
-  geom_abline(slope = 1, intercept = 0)
-# Display plot
-p
-
-p <- p +
-  geom_abline(slope = 1, intercept = delta, linetype = "dashed") +
-  geom_abline(slope = 1, intercept = -delta, linetype = "dashed")
-p
-#=========================================#
-#      Set seed for reproducibility       #
-#=========================================#
-set.seed() = 1
-# Assign rows to training/test sets randomly in 80/20 proportion
-df[,"train"] <- ifelse(runif(nrow(df)) < 0.8, 1, 0)
-# Separate training and test sets
-trainset <- df[df$train == 1, ]
-testset <- df[df$train == 0, ]
-trainColNum <- grep("train", names(trainset))
-trainset <- trainset[, -trainColNum]
-testset <- testset[, -trainColNum]
-
-#=========================================#
-#      Building a linear SVM              #
-#=========================================#
+# This still doesn't work, so we need to cut the number of coefficients down even further.
 
 library(e1071)
-svm_model<- svm(y ~ .,
-                data = trainset,
+formula <- Performance.Tag ~ Income+No.of.months.in.current.residence +
+  No.of.months.in.current.company+
+  No.of.times.30.DPD.or.worse.in.last.6.months+ 
+  No.of.times.90.DPD.or.worse.in.last.12.months+
+  Avgas.CC.Utilization.in.last.12.months+
+  No.of.PL.trades.opened.in.last.12.months+
+  No.of.Inquiries.in.last.6.months..excluding.home...auto.loans.+
+  No.of.Inquiries.in.last.12.months..excluding.home...auto.loans.
+
+# Columns: 1 ~ 6 + 10 + 11 + 14 + 15 + 18 + 22 + 23 + 24
+
+
+svm_model<- svm(formula,
+                data = data_train,
                 type = "C-classification",
                 kernel = "linear",
                 scale = FALSE)
 
 # Index of support vectors in training dataset
-svm_model$index
+#svm_model$index
 # Support vectors
-svm_model$SV
+#svm_model$SV
 # Negative intercept (unweighted)
-svm_model$rho
+#svm_model$rho
 
 # Weighting coefficients for support vectors
-svm_model$coefs
+#svm_model$coefs
 #0.9814815
 
 # Test accuracy
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-#0.8684211
+pred_test <- predict(svm_model, data_test)
+mean(pred_test == data_test$Performance.Tag)
+table(pred_test,data_test$Performance.Tag)
+# Again, the model is not predicting any defaults, so it is of no value
 
-# Visualize training data, distinguish classes using color
-p <- ggplot(data = trainset, aes(x = x1, y = x2, color = y)) +
-  geom_point() +
-  scale_color_manual(values = c("red", "blue"))
-# Render plot
-p
+# Let's try it again with a dataset with more weight on the defaults
+data_train <- rbind(def80,nondef05)
+data_test <- rbind(def20,nondef95)
 
-# Identify support vectors
-df_sv <- trainset[svm_model$index, ]
-# Mark out support vectors in plot
-p <- p + geom_point(data = df_sv,
-                    aes(x = x1, y = x2),
-                    color = "purple",
-                    size = 4, alpha = 0.5)
-# Display plot
-p
+svm_model<- svm(formula,
+                data = data_train,
+                type = "C-classification",
+                kernel = "linear",
+                scale = FALSE)
 
-#=========================================#
-#      Build the weight vector, w         #
-#=========================================#
-#Build the weight vector, w , from coefs and SV elements of svm_model .
-# Build weight vector
-w <- t(svm_model$coefs) %*% svm_model$SV
+pred_test <- predict(svm_model, data_test)
+mean(pred_test == data_test$Performance.Tag)
+table(pred_test,data_test$Performance.Tag)
+confusionMatrix(pred_test,data_test$Performance.Tag)
+# Accuracy and Sensitivity are good, but The sensitivity is very 
+# low (168/(168+391) = 30%
 
-# Calculate slope and save it to a variable
-slope_1 <- -w[1] / w[2]
-
-# Calculate intercept and save it to a variable
-intercept_1 <- svm_model$rho / w[2]
-# Plot decision boundary based on calculated slope and intercept
-p <- p + geom_abline(slope = slope_1,
-                     intercept = intercept_1)
-# Add margins to plot
-p <- p +
-  geom_abline(slope = slope_1,
-              intercept = intercept_1 - 1 / w[2],
-              linetype = "dashed") +
-  geom_abline(slope = slope_1,
-              intercept = intercept_1 + 1 / w[2],
-              linetype = "dashed")
-# Display plot
-p
-
-# Visualize decision boundary using built in plot function
-plot(x = svm_model,
-     data = trainset)
-
-#===========================================#
-# Generating a 2d uniformly distributed set #
-#===========================================#
-# Set required number of datapoints
-n <- 200
-# Set seed to ensure reproducibility
-set.seed(42)
-# Generate dataframe with 2 predictors x1 and x2 in (-1, 1)
-df <- data.frame(x1 = runif(n, min = -1, max = 1),
-                 x2 = runif(n, min = -1, max = 1))
-radius <- 0.7
-radius_squared <- radius ^ 2
-#categorize data points depending on location wrt boundary
-df$y <- factor(ifelse(df$x1 ^ 2 + df$x2 ^ 2 < radius_squared, -1, 1),
-               levels = c(-1, 1))
-# Build plot
-p <- ggplot(data = df, aes(x = x1, y = x2, color = y)) +
-  geom_point() +
-  scale_color_manual(values = c("-1" = "red", "1" = "blue"))
-# Display plot
-p
-#============================================#
-#   Function generates dataframe with points #
-#============================================#
-
-# lying on a circle of radius r
-circle <-
-  function(x1_center, x2_center, r, npoint = 100) {
-    # Angular spacing of 2*pi/npoint between points
-    theta <- seq(0, 2 * pi, length.out = npoint)
-    x1_circ <- x1_center + r * cos(theta)
-    x2_circ <- x2_center + r * sin(theta)
-    data.frame(x1c = x1_circ, x2c = x2_circ)
-  }
-# Generate boundary
-boundary <- circle(x1_center = 0,
-                   x2_center = 0,
-                   r = radius)
-# Add boundary to previous plot
-p <- p +
-  geom_path(data = boundary,
-            aes(x = x1c, y = x2c),
-            inherit.aes = FALSE)
-# Display plot
-p
-
-#Linear SVM, cost = 1
-#Partition radially separable dataset into training/test (seed = 10)
-# Build default cost linear SVM on training set
-svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear")
-svm_model
-
-# Calculate accuracy on test set
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-# 0.9210526
-
-plot(svm_model, trainset)
-
-#Linear SVM, cost = 100
-
-svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear")
-svm_model
-#31
-
-# Accuracy
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-# 0.9210526
-
-plot(svm_model, trainset)
-
-#Average accuracy for default cost SVM
-accuracy <- rep(NA, 100)
-set.seed(10)
-for (i in 1:100) {
-  df[, "train"] <- ifelse(runif(nrow(df)) < 0.8, 1, 0)
-  trainset <- df[df$train == 1, ]
-  testset <- df[df$train == 0, ]
-  trainColNum <- grep("train", names(trainset))
-  trainset <- trainset[, -trainColNum]
-  testset <- testset[, -trainColNum]
-  svm_model<- svm(y ~ ., data = trainset, type = "C-classification", cost = 1, kernel = "linear")
-  pred_test <- predict(svm_model, testset)
-  accuracy[i] <- mean(pred_test == testset$y)}
-mean(accuracy)
-# 0.642843
-sd(accuracy)
-# 0.07606017
-
+# Columns: 1 ~ 6 + 10 + 11 + 14 + 15 + 18 + 22 + 23 + 24
 #============================================#
 #             Tuning                         #
 #============================================#
-tune_out <- tune.svm(x = trainset[,-3], y = trainset[,3],
-                     type = "C-classification", kernel = "polynomial", degree = 2,
-                     cost = 10^(-1:2), gamma = c(0.1,1,10), coef0 = c(0.1,1,10))
-#print out tuned parameters
-tune_out$best.parameters$cost
-# 1
-tune_out$best.parameters$gamma
-#10
-tune_out$best.parameters$coef0
-#0.1
 
-svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "polynomial", degree = 2,
-                 cost = tune_out$best.parameters$cost,
-                 gamma = tune_out$best.parameters$gamma,
-                 coef0 = tune_out$best.parameters$coef0)
-pred_train <- predict(svm_model, trainset)
-mean(pred_train == trainset$y)
-#  0.9935065
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-#1
+# The tuning function won't solve (too many iterations), so we need to tune manually.
+# Polynomial also won't solve, so we need to cut our dataset down further
 
-#============================================#
-#  RBF Kernals Generate a complex dataset    #
-#============================================#
-#600 points (x1, x2)
-#x1 and x2 distributed differently
-
-n <- 600
 set.seed(42)
-df <- data.frame(x1 = rnorm(n, mean = -0.5, sd = 1),
-                 x2 = runif(n, min = -1, max = 1))
+gp1 <- runif(nrow(nondef))
+gp2 <- runif(nrow(def))
+nondef05 <- nondef[gp1 < 0.01, ]
+nondef95 <- nondef[gp1 >= 0.01, ]
+def80 <- def[gp2 < 0.1, ]
+def20 <- def[gp2 >= 0.1, ]
+(nrow(nondef05))
+(nrow(nondef95))
+(nrow(nondef))
+(nrow(def20))
+(nrow(def80))
+(nrow(def))
+(nrow(data_test))
+(nrow(merged_data))
 
-# Set radius and centers
-radius <- 0.7
-radius_squared <- radius ^ 2
-center_1 <- c(-0.7, 0)
-center_2 <- c(0.7, 0)
+data_train <- rbind(def80,nondef05)
+data_test <- rbind(def20,nondef95)
+# Note that this data test contains only 3% of non defaults and 50% of defaults
 
-# Classify points
-df$y <-
-  factor(ifelse(
-    (df$x1 - center_1[1]) ^ 2 + (df$x2 - center_1[2]) ^ 2 < radius_squared |
-      (df$x1 - center_2[1]) ^ 2 + (df$x2 - center_2[2]) ^ 2 < radius_squared,
-    -1, 1), levels = c(-1, 1))
-p <- ggplot(data = df, aes(x = x1, y = x2, color = y)) +
-  geom_point() +
-  guides(color = FALSE) +
-  scale_color_manual(values = c("red", "blue"))
-p
+svm_model1<- svm(formula,
+                data = data_train,
+                type = "C-classification",
+                kernel = "polynomial", degree = 2,
+                scale = FALSE)
 
-# Function to generate points on a circle
-circle <- function(x1_center, x2_center, r, npoint = 100) {
-  theta <- seq(0, 2 * pi, length.out = npoint)
-  x1_circ <- x1_center + r * cos(theta)
-  x2_circ <- x2_center + r * sin(theta)
-  data.frame(x1c = x1_circ, x2c = x2_circ)
-}
-# Generate boundary and plot it
-boundary_1 <- circle(x1_center = center_1[1], x2_center = center_1[2], r = radius)
-p <- p +
-  geom_path(data = boundary_1,
-            aes(x = x1c, y = x2c),
-            inherit.aes = FALSE)
-boundary_2 <- circle(x1_center = center_2[1], x2_center = center_2[2], r = radius)
-p <- p +
-  geom_path(data = boundary_2,
-            aes(x = x1c, y = x2c),
-            inherit.aes = FALSE)
-p
-# Motivating the RBF kernel
-#Partition data into test/train (not shown)
-#Use degree 2 polynomial kernel (default params)
+pred_test1 <- predict(svm_model1, data_test)
+mean(pred_test1 == data_test$Performance.Tag)
+table(pred_test1,data_test$Performance.Tag)
 
-svm_model <- svm(y ~ ., data = trainset,
+# We'll try a radial kernel
+nondef05 <- nondef[gp1 < 0.05, ]
+nondef95 <- nondef[gp1 >= 0.05, ]
+def80 <- def[gp2 < 0.8, ]
+def20 <- def[gp2 >= 0.8, ]
+data_train <- rbind(def80,nondef05)
+data_test <- rbind(def20,nondef95)
+
+svm_model2<- svm(formula,
+                 data = data_train,
                  type = "C-classification",
-                 kernel = "polynomial",
-                 degree = 2)
-svm_model
-#49
+                 kernel = "radial", 
+                 scale = FALSE)
 
-# Predictions
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-#0.9565217
-
-plot(svm_model, trainset)
-
-#Try higher degree polynomial Rule out odd degrees -3,5,9 etc.
-#Try degree 4
-
-svm_model <- svm(y ~ ., data = trainset,
-                 type = "C-classification",
-                 kernel = "polynomial",
-                 degree = 4)
-svm_model
-#44
-
-# Predictions
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-# 0.9347826
-plot(svm_model, trainset)
-
-#Heuristic: points close to each other have the same classification
-#Akin to K-Nearest Neighbors algorithm.
-
-#================================================#
-#  How does the RBF kernel vary with gamma (code)#
-#================================================#
-#rbf function
-
-rbf <- function(r, gamma) exp(-gamma * r)
-ggplot(data.frame(r = c(-0, 10)), aes(r)) +
-  stat_function(fun = rbf, args = list(gamma = 0.2), aes(color = "0.2")) +
-  stat_function(fun = rbf, args = list(gamma = 0.4), aes(color = "0.4")) +
-  stat_function(fun = rbf, args = list(gamma = 0.6), aes(color = "0.6")) +
-  stat_function(fun = rbf, args = list(gamma = 0.8), aes(color = "0.8")) +
-  stat_function(fun = rbf, args = list(gamma = 1), aes(color = "1")) +
-  stat_function(fun = rbf, args = list(gamma = 2), aes(color = "2")) +
-  scale_color_manual("gamma",
-                     values = c("red","orange","yellow",
-                                "green","blue","violet")) +
-  ggtitle("Radial basis function (gamma = 0.2 to 2)")
+pred_test2 <- predict(svm_model2, data_test)
+mean(pred_test2 == data_test$Performance.Tag)
+table(pred_test2,data_test$Performance.Tag)
 
 
-#================================================#
-#     Building an SVM using the RBF kernel       #
-#================================================#
-# Decreasing function of distance between two points in dataset.
-# Simulates k-NN algorithm.
-
-svm_model <- svm(y ~ .,
-                 data = trainset,
-                 type = "C-classification",
-                 kernel = "radial")
-pred_train <- predict(svm_model, trainset)
-mean(pred_train == trainset$y)
-#0.974026
-
-pred_test <- predict(svm_model, testset)
-mean(pred_test == testset$y)
-#1
-#p  0.974026
-
-#plot decision boundary
-plot(svm_model, trainset)
-
+#tune_out <- tune.svm(x = data_train[,c(6,10,11,14,15,18,22,23,24)], y = data_train[,1],
+#                     type = "C-classification", kernel = "radial",
+#                     cost = 10^(-1:2), gamma = c(0.1,1,10), coef0 = c(0.1,1,10))
+ #print out tuned parameters
+#tune_out$best.parameters$cost
+# 1
+#tune_out$best.parameters$gamma
+#10
+#tune_out$best.parameters$coef0
+#0.1
