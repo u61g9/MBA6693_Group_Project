@@ -29,6 +29,7 @@ library(caret)
 library(boot)
 library(pROC)
 library(tidyverse)
+?sample.split
 
 getwd()
 credit <- read.csv("Credit_Bureau.csv", header = T)
@@ -464,13 +465,9 @@ ggplot(melted_cor_DPD_12, aes(x=Var1, y=Var2, fill=value)) +
 # For 12 Months 30DPD and 60DPD average relationship.
 # For 12 Months 30DPD and 60DPD has significant negative relationship and more towards 0.80 value Dark Blue
 
-#===========================================#
-#  Tree-based Analysis                      #
-#===========================================#
-
-# We will examine four different tree based methods to determine which best suits
-# the credit_data.  This will start with a traditional classification tree model, a
-# bagged tree model, a random forest model and a gradient-boosting machine (GBM).
+#===================================#
+#  Data Processing                  #
+#===================================#
 
 # We need to create a training and test set for the analysis.  This will be 
 # consistent across all subsequent analyses.  First, we will filter our data to
@@ -489,13 +486,188 @@ filter_data <- na.omit(filter_data)
 (nrow(filter_data))
 check.na(filter_data)
 
+library(Information)
+library(gridExtra)
+
 set.seed(42)
 gp <- runif(nrow(filter_data))
 data_train <- filter_data[gp < 0.8, ]
 data_test <- filter_data[gp >= 0.8, ]
 (nrow(data_train))
 (nrow(data_test))
-(nrow(merged_data))
+(nrow(filter_data))
+
+data(data_train, package="Information")
+data(data_test, package="Information")
+
+
+# PULL IN FUNCTIONS FROM SAMPLE R CODE
+#==================================================
+
+#Function to replace continuous variables with woe values
+replace_woe_continuous <-function(woetable, var_df,colname){
+  
+  woetable<- data.frame(woetable)
+  
+  if(woetable[1,1]=="NA") {group<-c(NA,seq(1, nrow(woetable)-1))}else {group <- seq(1,nrow(woetable))}
+  woetable_group<- data.frame(cbind(woe=woetable$WOE, group=group))
+  woetable_group$group=factor(woetable_group$group)
+  
+  bins<- woetable[,1] %>% str_match_all("[,][0-9]+[\\]]") %>% unlist %>% str_match_all("[0-9]+") %>% as.numeric
+  if(bins[1]==0 ){ bins<-c(-1,bins)} else { bins<-c(0,bins)}
+  labels<-seq(1:(length(bins)-1))
+  
+  var_group <- data.frame(cbind(variable=var_df, group=cut(var_df, bins, right=TRUE, include.lowest=TRUE, 
+                                                           labels = labels)))
+  var_group$id<-1:nrow(var_group)
+  var_group<-merge(var_group,woetable_group, by="group",  all.x=TRUE ,sort=FALSE)
+  var_group<-var_group[order(var_group$id), ]
+  
+  colnames(var_group)[4]<-colname
+  
+  return (var_group[4])
+}
+
+#function to prepare parameters and call replace_woe_continuous function 
+callreplace<-function(index,ivtables_list,numvar_dt){
+  
+  #From ivtables_list, extract woetable corresponding to the numeric variable 
+  param1<-ivtables_list[colnames(numvar_dt)[index]][[1]]
+  #convert the numeric variable list into numeric data
+  param2<-as.numeric(numvar_dt[,index])
+  #create the woe column name as <numeric column name>_woe
+  param3<-paste(colnames(numvar_dt)[index],"_","woe")
+  
+  df<-replace_woe_continuous(param1,param2,param3)
+  return(df)
+}
+
+#Function to replace categorical variables with woe values
+replace_woe_cat <-function(index,ivtables_list,catvar_dt){
+  
+  #Extract the name of the categorical variable
+  colname<-colnames(catvar_dt)[index]
+  #extract the categorical variable dataframe at the current index
+  cat_dt<-data.frame(catvar_dt[,index])
+  cat_dt$id<-1:nrow(cat_dt)
+  #Set categorical variable dt column name to be same as the category name
+  colnames(cat_dt)[1]<-colname
+  
+  #From ivtables_list, extract woetable corresponding to the categorical variable 
+  woetable<-data.frame(ivtables_list[colname][[1]])
+  #choose only category and woe columns
+  woetable<-woetable[c(1,4)]
+  
+  
+  #Merge woetable and category dt
+  cat_list<-merge(cat_dt, woetable, by=colname, all.x=TRUE, sort=FALSE )
+  cat_list<-cat_list[order(cat_list$id), ]
+  colnames(cat_list)[3]<-paste(colname,"_","woe")
+  
+  return (cat_list[3])
+  
+}
+# ===========================================
+#  End Functions from Sample R Code
+
+# Prepare WOE data
+# ============================
+# Create Woe value list for continuous variables
+#Extract all numeric variables
+appdatanumeric<- select_if(merged_data, is.numeric)
+str(appdatanumeric)
+#Remove application ID and Performance.Tag.x  
+appdatanumeric<-data.frame(appdatanumeric[,-c(1,2)])
+str(appdatanumeric)
+
+#Extract woe values for each numeric variable in appdata
+woe_list<-sapply(1:ncol(appdatanumeric),callreplace(i,IV$Tables,appdatanumeric))
+woe_df<-as.data.frame(do.call(cbind, woe_list))
+
+?sappl
+
+# Create Woe value list for categorical variables
+    #Extract all categorical variables
+    appdatacat<- select_if(merged_data, is.factor)
+    appdatacat<-data.frame(appdatacat)
+    str(appdatacat)
+    #Extract woe values for each categorical variable in appdata
+    woe_catlist<-sapply(1:ncol(appdatacat),replace_woe_cat(appdatacat,IV$Tables,appdatacat))
+    woe_catlist_df<-as.data.frame(do.call(cbind, woe_catlist))
+
+
+# Create consolidated woe values df along with application id and the dependent variable Performance.Tag.x
+    woe_appdata<-data.frame(cbind(woe_df,woe_catlist_df,
+                              Performance.Tag.x=appdata_clean$Performance.Tag.x ))
+    nonwoe_appdata<-appdata[,-c(1)]
+
+#  =======================================
+
+    demo_cat <- filter_data[,c(3,4,7,8,9)]
+    str(demo_cat)
+    dummies <- data.frame(sapply(demo_cat, function(x) data.frame(model.matrix(~x-1, data = demo_cat))[,-1]))
+    str(dummies)
+    scaled_data <- filter_data[,c(2, 6, 10, 11)] %>% scale()
+    head(scaled_data)
+
+filer_data <- 
+
+    
+    
+    
+filter_data$Performance.Tag <- as.numeric(filter_data$Performance.Tag)
+table(filter_data$Performance.Tag)
+    
+IV <- create_infotables(data = filter_data,y="Performance.Tag",bins=10, parallel=TRUE)
+IV_Value <- data.frame(IV$Summary)
+
+# Sample: View derived Information Value for each variable
+print(IV$Tables$No.of.Inquiries.in.last.12.months..excluding.home...auto.loans., row.names = F)
+
+# Sample Plot of Information Table
+plot_infotables(IV, "No.of.Inquiries.in.last.12.months..excluding.home...auto.loans.") + theme_minimal()
+
+
+# Checking the Information Value Summary
+IV_Value[order(-IV_Value$IV), ]
+# Compare the Information value of demographic data variables with credit data variables
+
+# Highest IV vatiables
+IV_Value <- IV_Value[order(-IV_Value$IV), ]
+IV_Top10 <- c(No.of.Inquiries.in.last.12.months..excluding.home...auto.loans.,
+             Avgas.CC.Utilization.in.last.12.months,
+             No.of.PL.trades.opened.in.last.12.months,
+             No.of.trades.opened.in.last.12.months,
+             Outstanding.Balance,
+             Total.No.of.Trades,
+             No.of.times.30.DPD.or.worse.in.last.6.months,
+             No.of.PL.trades.opened.in.last.6.months,
+             No.of.times.90.DPD.or.worse.in.last.12.months,
+             No.of.Inquiries.in.last.6.months..excluding.home...auto.loans.)
+# Creating Dummy variables for categorical data like gender: For example
+str(filter_data)
+
+
+
+
+
+
+
+
+
+
+
+
+#===========================================#
+#  Tree-based Analysis                      #
+#===========================================#
+
+# We will examine four different tree based methods to determine which best suits
+# the credit_data.  This will start with a traditional classification tree model, a
+# bagged tree model, a random forest model and a gradient-boosting machine (GBM).
+
+
+
 
 # Classification Tree
 #------------------------
@@ -718,6 +890,8 @@ data_test <- filter_data[gp >= 0.8, ]
 (nrow(data_test))
 (nrow(merged_data))
 
+data_train$Performance.Tag
+
 glm_model <- glm(Performance.Tag ~., data = data_train, family = "binomial")
 summary(glm_model)
 
@@ -802,7 +976,16 @@ formula <- Performance.Tag ~ Age+No.of.dependents+Income+No.of.months.in.current
 
 formula
 
-glm_model <- glm(formula, data = data_train, family = "binomial")
+formula1 <- Performance.Tag ~ No.of.Inquiries.in.last.12.months..excluding.home...auto.loans.+
+Avgas.CC.Utilization.in.last.12.months+
+No.of.PL.trades.opened.in.last.12.months+
+Total.No.of.Trades+
+No.of.times.30.DPD.or.worse.in.last.6.months+
+No.of.times.90.DPD.or.worse.in.last.12.months+
+No.of.Inquiries.in.last.6.months..excluding.home...auto.loans.
+
+
+glm_model <- glm(formula1, data = data_train, family = "binomial")
 summary(glm_model)
 
 pred <- predict(object = glm_model, newdata = data_test, type = "response")
